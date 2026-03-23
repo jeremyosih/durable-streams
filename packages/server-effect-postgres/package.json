@@ -23,9 +23,6 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "durable-streams-effect-postgres": "./dist/cli.js"
-  },
   "exports": {
     ".": {
       "import": {
@@ -50,7 +47,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "durable-streams-effect-postgres-server": "./dist/cli.cjs"
+    "durable-streams-effect-postgres": "./bin/server-effect-postgres.js"
   },
   "sideEffects": false,
   "scripts": {
@@ -73,7 +70,8 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "bin"
   ],
   "engines": {
     "node": ">=22"

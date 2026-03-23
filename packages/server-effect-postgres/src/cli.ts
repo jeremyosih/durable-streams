@@ -96,8 +96,3 @@ export async function runEffectPostgresServerCli(): Promise<void> {
   const url = await Effect.runPromise(Effect.promise(() => server.start()))
   console.error(`[durable-streams] Listening on ${url}`)
 }
-
-void runEffectPostgresServerCli().catch((error) => {
-  console.error(`[durable-streams] Failed to start`, error)
-  process.exit(1)
-})
