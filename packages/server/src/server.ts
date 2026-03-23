@@ -9,7 +9,12 @@ import { FileBackedStreamStore } from "./file-store"
 import { generateResponseCursor } from "./cursor"
 import type { CursorOptions } from "./cursor"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
-import type { StreamLifecycleEvent, TestServerOptions } from "./types"
+import type {
+  DurableStreamStore,
+  Stream,
+  StreamLifecycleEvent,
+  TestServerOptions,
+} from "./types"
 
 // Protocol headers (aligned with PROTOCOL.md)
 const STREAM_OFFSET_HEADER = `Stream-Next-Offset`
@@ -146,12 +151,13 @@ interface InjectedFault {
 }
 
 export class DurableStreamTestServer {
-  readonly store: StreamStore | FileBackedStreamStore
+  readonly store: DurableStreamStore
   private server: Server | null = null
   private options: Required<
     Omit<
       TestServerOptions,
       | `dataDir`
+      | `store`
       | `onStreamCreated`
       | `onStreamDeleted`
       | `compression`
@@ -172,8 +178,10 @@ export class DurableStreamTestServer {
   private injectedFaults = new Map<string, InjectedFault>()
 
   constructor(options: TestServerOptions = {}) {
-    // Choose store based on dataDir option
-    if (options.dataDir) {
+    // Choose store based on explicit store, dataDir, or in-memory default
+    if (options.store) {
+      this.store = options.store
+    } else if (options.dataDir) {
       this.store = new FileBackedStreamStore({
         dataDir: options.dataDir,
       })
@@ -203,6 +211,8 @@ export class DurableStreamTestServer {
     if (this.server) {
       throw new Error(`Server already started`)
     }
+
+    await Promise.resolve(this.store.initialize?.())
 
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => {
@@ -241,9 +251,7 @@ export class DurableStreamTestServer {
     this.isShuttingDown = true
 
     // Cancel all pending long-polls and SSE waits to unblock connection handlers
-    if (`cancelAllWaits` in this.store) {
-      ;(this.store as { cancelAllWaits: () => void }).cancelAllWaits()
-    }
+    await Promise.resolve(this.store.cancelAllWaits?.())
 
     // Force-close all active SSE connections
     for (const res of this.activeSSEResponses) {
@@ -259,10 +267,7 @@ export class DurableStreamTestServer {
         }
 
         try {
-          // Close file-backed store if used
-          if (this.store instanceof FileBackedStreamStore) {
-            await this.store.close()
-          }
+          await Promise.resolve(this.store.close?.())
 
           this.server = null
           this._url = null
@@ -289,7 +294,9 @@ export class DurableStreamTestServer {
    * Clear all streams.
    */
   clear(): void {
-    this.store.clear()
+    Promise.resolve(this.store.clear()).catch((err) => {
+      console.error(`Error clearing store:`, err)
+    })
   }
 
   /**
@@ -494,7 +501,7 @@ export class DurableStreamTestServer {
           await this.handleCreate(path, req, res)
           break
         case `HEAD`:
-          this.handleHead(path, res)
+          await this.handleHead(path, res)
           break
         case `GET`:
           await this.handleRead(path, url, req, res)
@@ -609,7 +616,7 @@ export class DurableStreamTestServer {
     // Read body if present
     const body = await this.readBody(req)
 
-    const isNew = !this.store.has(path)
+    const isNew = !(await this.storeHas(path))
 
     // Support both sync (StreamStore) and async (FileBackedStreamStore) create
     await Promise.resolve(
@@ -622,7 +629,10 @@ export class DurableStreamTestServer {
       })
     )
 
-    const stream = this.store.get(path)!
+    const stream = await this.storeGet(path)
+    if (!stream) {
+      throw new Error(`Stream not found: ${path}`)
+    }
 
     // Call lifecycle hook for new streams
     if (isNew && this.options.onStreamCreated) {
@@ -659,8 +669,8 @@ export class DurableStreamTestServer {
   /**
    * Handle HEAD - get metadata
    */
-  private handleHead(path: string, res: ServerResponse): void {
-    const stream = this.store.get(path)
+  private async handleHead(path: string, res: ServerResponse): Promise<void> {
+    const stream = await this.storeGet(path)
     if (!stream) {
       res.writeHead(404, { "content-type": `text/plain` })
       res.end()
@@ -701,7 +711,7 @@ export class DurableStreamTestServer {
     req: IncomingMessage,
     res: ServerResponse
   ): Promise<void> {
-    const stream = this.store.get(path)
+    const stream = await this.storeGet(path)
     if (!stream) {
       res.writeHead(404, { "content-type": `text/plain` })
       res.end(`Stream not found`)
@@ -801,7 +811,7 @@ export class DurableStreamTestServer {
     }
 
     // Read current messages
-    let { messages, upToDate } = this.store.read(path, effectiveOffset)
+    let { messages, upToDate } = await this.storeRead(path, effectiveOffset)
 
     // Only wait in long-poll if:
     // 1. long-poll mode is enabled
@@ -853,7 +863,7 @@ export class DurableStreamTestServer {
           this.options.cursorOptions
         )
         // Check if stream was closed during the wait
-        const currentStream = this.store.get(path)
+        const currentStream = await this.storeGet(path)
         const timeoutHeaders: Record<string, string> = {
           [STREAM_OFFSET_HEADER]: effectiveOffset ?? stream.currentOffset,
           [STREAM_UP_TO_DATE_HEADER]: `true`,
@@ -898,7 +908,7 @@ export class DurableStreamTestServer {
 
     // Include Stream-Closed when stream is closed AND client is at tail AND upToDate
     // Re-fetch stream to get current state (may have been closed during request)
-    const currentStream = this.store.get(path)
+    const currentStream = await this.storeGet(path)
     const clientAtTail = responseOffset === currentStream?.currentOffset
     if (currentStream?.closed && clientAtTail && upToDate) {
       headers[STREAM_CLOSED_HEADER] = `true`
@@ -921,7 +931,7 @@ export class DurableStreamTestServer {
     }
 
     // Format response (wraps JSON in array brackets)
-    const responseData = this.store.formatResponse(path, messages)
+    const responseData = await this.storeFormatResponse(path, messages)
 
     // Apply compression if enabled and response is large enough
     let finalData: Uint8Array = responseData
@@ -951,7 +961,7 @@ export class DurableStreamTestServer {
    */
   private async handleSSE(
     path: string,
-    stream: ReturnType<StreamStore[`get`]>,
+    stream: Stream | undefined,
     initialOffset: string,
     cursor: string | undefined,
     useBase64: boolean,
@@ -1004,9 +1014,10 @@ export class DurableStreamTestServer {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     while (isConnected && !this.isShuttingDown) {
       // Read current messages from offset
-      const { messages, upToDate } = this.store.read(path, currentOffset)
+      const { messages, upToDate } = await this.storeRead(path, currentOffset)
 
       // Send data events for each message
+      let eventBatch = ``
       for (const message of messages) {
         // Format data based on content type and encoding
         let dataPayload: string
@@ -1015,7 +1026,7 @@ export class DurableStreamTestServer {
           dataPayload = Buffer.from(message.data).toString(`base64`)
         } else if (isJsonStream) {
           // Use formatResponse to get properly formatted JSON (strips trailing commas)
-          const jsonBytes = this.store.formatResponse(path, [message])
+          const jsonBytes = await this.storeFormatResponse(path, [message])
           dataPayload = decoder.decode(jsonBytes)
         } else {
           dataPayload = decoder.decode(message.data)
@@ -1023,15 +1034,14 @@ export class DurableStreamTestServer {
 
         // Send data event - encode multiline payloads per SSE spec
         // Each line in the payload needs its own "data:" prefix
-        res.write(`event: data\n`)
-        res.write(encodeSSEData(dataPayload))
+        eventBatch += `event: data\n` + encodeSSEData(dataPayload)
 
         currentOffset = message.offset
       }
 
       // Compute offset the same way as HTTP GET: last message's offset, or stream's current offset
       // Re-fetch stream to get current state (may have been closed)
-      const currentStream = this.store.get(path)
+      const currentStream = await this.storeGet(path)
       const controlOffset =
         messages[messages.length - 1]?.offset ?? currentStream!.currentOffset
 
@@ -1063,8 +1073,9 @@ export class DurableStreamTestServer {
         }
       }
 
-      res.write(`event: control\n`)
-      res.write(encodeSSEData(JSON.stringify(controlData)))
+      eventBatch +=
+        `event: control\n` + encodeSSEData(JSON.stringify(controlData))
+      res.write(eventBatch)
 
       // Close SSE connection after sending streamClosed
       if (streamIsClosed && clientAtTail) {
@@ -1118,7 +1129,7 @@ export class DurableStreamTestServer {
           )
 
           // Check if stream was closed during the wait
-          const streamAfterWait = this.store.get(path)
+          const streamAfterWait = await this.storeGet(path)
           if (streamAfterWait?.closed) {
             const closedControlData: Record<string, string | boolean> = {
               [SSE_OFFSET_FIELD]: currentOffset,
@@ -1293,7 +1304,7 @@ export class DurableStreamTestServer {
 
         // Stream already closed by a different producer - conflict
         if (closeResult.producerResult?.status === `stream_closed`) {
-          const stream = this.store.get(path)
+          const stream = await this.storeGet(path)
           res.writeHead(409, {
             "content-type": `text/plain`,
             [STREAM_CLOSED_HEADER]: `true`,
@@ -1314,7 +1325,7 @@ export class DurableStreamTestServer {
       }
 
       // Close-only without producer headers (simple idempotent close)
-      const closeResult = this.store.closeStream(path)
+      const closeResult = await Promise.resolve(this.store.closeStream(path))
       if (!closeResult) {
         res.writeHead(404, { "content-type": `text/plain` })
         res.end(`Stream not found`)
@@ -1381,7 +1392,7 @@ export class DurableStreamTestServer {
       if (streamClosed && !message) {
         // Check if this is an idempotent producer duplicate (matching closing tuple)
         if (producerResult?.status === `duplicate`) {
-          const stream = this.store.get(path)
+          const stream = await this.storeGet(path)
           res.writeHead(204, {
             [STREAM_OFFSET_HEADER]: stream?.currentOffset ?? ``,
             [STREAM_CLOSED_HEADER]: `true`,
@@ -1393,7 +1404,7 @@ export class DurableStreamTestServer {
         }
 
         // Not a duplicate - stream was closed by different request, return 409
-        const closedStream = this.store.get(path)
+        const closedStream = await this.storeGet(path)
         res.writeHead(409, {
           "content-type": `text/plain`,
           [STREAM_CLOSED_HEADER]: `true`,
@@ -1491,13 +1502,13 @@ export class DurableStreamTestServer {
    * Handle DELETE - delete stream
    */
   private async handleDelete(path: string, res: ServerResponse): Promise<void> {
-    if (!this.store.has(path)) {
+    if (!(await this.storeHas(path))) {
       res.writeHead(404, { "content-type": `text/plain` })
       res.end(`Stream not found`)
       return
     }
 
-    this.store.delete(path)
+    await Promise.resolve(this.store.delete(path))
 
     // Call lifecycle hook
     if (this.options.onStreamDeleted) {
@@ -1603,6 +1614,31 @@ export class DurableStreamTestServer {
   // ============================================================================
   // Helpers
   // ============================================================================
+
+  private async storeGet(path: string): Promise<Stream | undefined> {
+    return await Promise.resolve(this.store.get(path))
+  }
+
+  private async storeHas(path: string): Promise<boolean> {
+    return await Promise.resolve(this.store.has(path))
+  }
+
+  private async storeRead(
+    path: string,
+    offset?: string
+  ): Promise<{
+    messages: Array<Stream[`messages`][number]>
+    upToDate: boolean
+  }> {
+    return await Promise.resolve(this.store.read(path, offset))
+  }
+
+  private async storeFormatResponse(
+    path: string,
+    messages: Array<Stream[`messages`][number]>
+  ): Promise<Uint8Array> {
+    return await Promise.resolve(this.store.formatResponse(path, messages))
+  }
 
   private readBody(req: IncomingMessage): Promise<Uint8Array> {
     return new Promise((resolve, reject) => {

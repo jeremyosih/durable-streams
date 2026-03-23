@@ -13,11 +13,12 @@ outline: [2, 3]
 
 ## At a glance
 
-| Server                                 | Language             | Best for                          |
-| -------------------------------------- | -------------------- | --------------------------------- |
-| Dev Server (`@durable-streams/server`) | Node.js / TypeScript | Development, testing, prototyping |
-| Caddy Plugin                           | Go                   | Production deployments            |
-| Electric                               | Hosted               | Managed production hosting        |
+| Server                                                             | Language             | Best for                                   |
+| ------------------------------------------------------------------ | -------------------- | ------------------------------------------ |
+| Dev Server (`@durable-streams/server`)                             | Node.js / TypeScript | Development, testing, prototyping          |
+| Effect Postgres server (`@durable-streams/server-effect-postgres`) | TypeScript / Effect  | Postgres-backed durability in Node.js apps |
+| Caddy Plugin                                                       | Go                   | Production deployments                     |
+| Electric                                                           | Hosted               | Managed production hosting                 |
 
 ## Node server
 
@@ -43,6 +44,39 @@ await server.start()
 ```
 
 Use `dataDir` for file-backed local persistence, or omit it for the default in-memory mode.
+
+## Effect Postgres server
+
+`@durable-streams/server-effect-postgres` provides an Effect v4 implementation
+backed by Postgres transactions.
+
+Install it with:
+
+```bash
+npm install @durable-streams/server-effect-postgres
+```
+
+Start it in-process:
+
+```typescript
+import { EffectPostgresDurableStreamServer } from "@durable-streams/server-effect-postgres"
+
+const server = new EffectPostgresDurableStreamServer({
+  port: 4437,
+  databaseUrl: "postgres://postgres:password@127.0.0.1:5432/durable_streams",
+})
+
+await server.start()
+```
+
+The package bootstraps its schema automatically and uses Postgres row locks plus
+transactions to make appends, producer sequencing, and stream closure durable.
+
+### When to use
+
+- Node.js deployments that already depend on Postgres
+- Durable local or hosted persistence without file-store directories
+- Effect-based applications that want to embed the server in-process
 
 ### Storage options
 

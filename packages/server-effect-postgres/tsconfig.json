@@ -4,13 +4,15 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
+      "@durable-streams/server": ["../server/src/index.ts"],
+      "@durable-streams/server/*": ["../server/src/*"],
       "@durable-streams/client": ["../client/src/index.ts"],
-      "@durable-streams/server": ["./src/index.ts"],
-      "@durable-streams/server/*": ["./src/*"],
+      "@durable-streams/client/*": ["../client/src/*"],
+      "@durable-streams/state": ["../state/src/index.ts"],
+      "@durable-streams/state/*": ["../state/src/*"],
       "@durable-streams/server-conformance-tests": [
         "../server-conformance-tests/src/index.ts"
-      ],
-      "@durable-streams/state": ["../state/src/index.ts"]
+      ]
     }
   },
   "include": ["src/**/*", "test/**/*", "*.ts"],

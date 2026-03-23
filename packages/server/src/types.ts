@@ -2,6 +2,8 @@
  * Types for the in-memory durable streams test server.
  */
 
+export type MaybePromise<T> = T | Promise<T>
+
 /**
  * A single message in a stream.
  */
@@ -123,6 +125,27 @@ export type StreamLifecycleHook = (
 ) => void | Promise<void>
 
 /**
+ * Options for append operations.
+ */
+export interface AppendOptions {
+  seq?: string
+  contentType?: string
+  producerId?: string
+  producerEpoch?: number
+  producerSeq?: number
+  close?: boolean
+}
+
+/**
+ * Result of an append operation.
+ */
+export interface AppendResult {
+  message: StreamMessage | null
+  producerResult?: ProducerValidationResult
+  streamClosed?: boolean
+}
+
+/**
  * Options for creating the test server.
  */
 export interface TestServerOptions {
@@ -148,6 +171,12 @@ export interface TestServerOptions {
    * If omitted, uses in-memory storage.
    */
   dataDir?: string
+
+  /**
+   * Optional custom store implementation.
+   * When provided, it takes precedence over dataDir and in-memory defaults.
+   */
+  store?: DurableStreamStore
 
   /**
    * Hook called when a stream is created.
@@ -243,4 +272,76 @@ export interface PendingLongPoll {
    * Timeout ID.
    */
   timeoutId: ReturnType<typeof setTimeout>
+}
+
+/**
+ * Storage abstraction for durable stream servers.
+ * Implementations may be synchronous or asynchronous.
+ */
+export interface DurableStreamStore {
+  initialize?: () => MaybePromise<void>
+  create: (
+    path: string,
+    options?: {
+      contentType?: string
+      ttlSeconds?: number
+      expiresAt?: string
+      initialData?: Uint8Array
+      closed?: boolean
+    }
+  ) => MaybePromise<Stream>
+  get: (path: string) => MaybePromise<Stream | undefined>
+  has: (path: string) => MaybePromise<boolean>
+  delete: (path: string) => MaybePromise<boolean>
+  append: (
+    path: string,
+    data: Uint8Array,
+    options?: AppendOptions
+  ) => MaybePromise<StreamMessage | AppendResult | null>
+  appendWithProducer: (
+    path: string,
+    data: Uint8Array,
+    options: AppendOptions
+  ) => Promise<AppendResult>
+  closeStream: (
+    path: string
+  ) => MaybePromise<{ finalOffset: string; alreadyClosed: boolean } | null>
+  closeStreamWithProducer: (
+    path: string,
+    options: {
+      producerId: string
+      producerEpoch: number
+      producerSeq: number
+    }
+  ) => Promise<{
+    finalOffset: string
+    alreadyClosed: boolean
+    producerResult?: ProducerValidationResult
+  } | null>
+  getProducerEpoch?: (
+    path: string,
+    producerId: string
+  ) => MaybePromise<number | undefined>
+  read: (
+    path: string,
+    offset?: string
+  ) => MaybePromise<{ messages: Array<StreamMessage>; upToDate: boolean }>
+  formatResponse: (
+    path: string,
+    messages: Array<StreamMessage>
+  ) => MaybePromise<Uint8Array>
+  waitForMessages: (
+    path: string,
+    offset: string,
+    timeoutMs: number
+  ) => Promise<{
+    messages: Array<StreamMessage>
+    timedOut: boolean
+    streamClosed?: boolean
+  }>
+  getCurrentOffset: (path: string) => MaybePromise<string | undefined>
+  clear: () => MaybePromise<void>
+  cancelAllWaits?: () => MaybePromise<void>
+  list?: () => MaybePromise<Array<string>>
+  close?: () => MaybePromise<void>
 }
