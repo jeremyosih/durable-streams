@@ -18,6 +18,11 @@ export {
   type CursorOptions,
 } from "./cursor"
 export type {
+  AppendOptions,
+  AppendResult,
+  DurableStreamStore,
+  ProducerState,
+  ProducerValidationResult,
   Stream,
   StreamMessage,
   TestServerOptions,

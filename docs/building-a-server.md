@@ -208,9 +208,10 @@ The 232 tests cover:
 
 ## Reference implementations
 
-Two official implementations are available as reference:
+Three official implementations are available as reference:
 
 - **Node.js Dev Server** ([packages/server](https://github.com/durable-streams/durable-streams/tree/main/packages/server)) -- a TypeScript implementation good for understanding the basics. Uses in-memory or file-backed storage.
+- **Effect + Postgres server** ([packages/server-effect-postgres](https://github.com/durable-streams/durable-streams/tree/main/packages/server-effect-postgres)) -- a TypeScript implementation built around an Effect-managed lifecycle with transactional Postgres persistence.
 - **Caddy Plugin** ([packages/caddy-plugin](https://github.com/durable-streams/durable-streams/tree/main/packages/caddy-plugin)) -- a production-grade Go implementation built as a Caddy v2 plugin. Uses LMDB for persistence.
 
 See [Deployment](deployment.md) for usage details on the official server options.

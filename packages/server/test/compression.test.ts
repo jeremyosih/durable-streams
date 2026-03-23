@@ -42,7 +42,9 @@ function rawRequest(
             if (typeof value === `string`) {
               headers[key] = value
             } else if (Array.isArray(value)) {
-              headers[key] = value[0]
+              if (value[0] !== undefined) {
+                headers[key] = value[0]
+              }
             }
           }
           resolve({
