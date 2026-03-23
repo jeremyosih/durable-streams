@@ -34,6 +34,38 @@ export interface EffectPostgresDurableStreamServerOptions
   onStreamDeleted?: StreamLifecycleHook
 }
 
+export interface EffectPostgresCliOptions extends EffectPostgresDurableStreamServerOptions {
+  host?: string
+  port?: number
+  longPollTimeout?: number
+  compression?: boolean
+}
+
+export interface EffectPostgresResolvedServerOptions
+  extends
+    Omit<
+      EffectPostgresDurableStreamServerOptions,
+      | `host`
+      | `port`
+      | `longPollTimeout`
+      | `compression`
+      | `schema`
+      | `maxConnections`
+      | `producerStateTtlMs`
+    >,
+    Required<
+      Pick<
+        EffectPostgresCliOptions,
+        | `host`
+        | `port`
+        | `longPollTimeout`
+        | `compression`
+        | `schema`
+        | `maxConnections`
+        | `producerStateTtlMs`
+      >
+    > {}
+
 export interface WaiterResult {
   messages: Array<{
     data: Uint8Array

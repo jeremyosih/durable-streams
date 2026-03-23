@@ -23,6 +23,23 @@ This package targets protocol conformance first:
 pnpm add @durable-streams/server-effect-postgres
 ```
 
+## CLI
+
+Start the server from the command line:
+
+```bash
+pnpm exec durable-streams-effect-postgres
+```
+
+Or with explicit environment variables:
+
+```bash
+DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/durable_streams \
+DURABLE_STREAMS_HOST=127.0.0.1 \
+DURABLE_STREAMS_PORT=4437 \
+pnpm exec durable-streams-effect-postgres
+```
+
 ## Usage
 
 ```ts
@@ -40,6 +57,20 @@ console.log(server.url)
 ## Environment
 
 You can provide connection settings directly or via `databaseUrl`.
+
+The CLI reads these environment variables:
+
+| Variable                                | Default     | Description                                   |
+| --------------------------------------- | ----------- | --------------------------------------------- |
+| `DATABASE_URL`                          | —           | Postgres connection string                    |
+| `DURABLE_STREAMS_HOST`                  | `127.0.0.1` | Host to bind the HTTP server to               |
+| `DURABLE_STREAMS_PORT`                  | `4437`      | Port to bind the HTTP server to               |
+| `DURABLE_STREAMS_LONG_POLL_TIMEOUT_MS`  | `30000`     | Long-poll timeout in milliseconds             |
+| `DURABLE_STREAMS_MAX_CONNECTIONS`       | `10`        | Postgres pool size                            |
+| `DURABLE_STREAMS_SCHEMA`                | `public`    | Logical schema name for durable stream tables |
+| `DURABLE_STREAMS_PRODUCER_STATE_TTL_MS` | `604800000` | Producer state retention window               |
+
+Use `--help` to print the CLI usage summary.
 
 ## Schema
 
