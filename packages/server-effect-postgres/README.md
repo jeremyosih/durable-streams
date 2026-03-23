@@ -35,8 +35,8 @@ Or with explicit environment variables:
 
 ```bash
 DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/durable_streams \
-DURABLE_STREAMS_HOST=127.0.0.1 \
-DURABLE_STREAMS_PORT=4437 \
+HOST=127.0.0.1 \
+PORT=4437 \
 pnpm exec durable-streams-effect-postgres
 ```
 
@@ -63,10 +63,10 @@ The CLI reads these environment variables:
 | Variable                                | Default     | Description                                   |
 | --------------------------------------- | ----------- | --------------------------------------------- |
 | `DATABASE_URL`                          | —           | Postgres connection string                    |
-| `DURABLE_STREAMS_HOST`                  | `127.0.0.1` | Host to bind the HTTP server to               |
-| `DURABLE_STREAMS_PORT`                  | `4437`      | Port to bind the HTTP server to               |
-| `DURABLE_STREAMS_LONG_POLL_TIMEOUT_MS`  | `30000`     | Long-poll timeout in milliseconds             |
-| `DURABLE_STREAMS_MAX_CONNECTIONS`       | `10`        | Postgres pool size                            |
+| `HOST`                                  | `127.0.0.1` | Host to bind the HTTP server to               |
+| `PORT`                                  | `4437`      | Port to bind the HTTP server to               |
+| `LONG_POLL_TIMEOUT_MS`                  | `30000`     | Long-poll timeout in milliseconds             |
+| `MAX_CONNECTIONS`                       | `10`        | Postgres pool size                            |
 | `DURABLE_STREAMS_SCHEMA`                | `public`    | Logical schema name for durable stream tables |
 | `DURABLE_STREAMS_PRODUCER_STATE_TTL_MS` | `604800000` | Producer state retention window               |
 
